@@ -79,7 +79,29 @@ zip_entry_fwrite :: (zip: zip_t, filename: string) -> c_int {
   return _zip_entry_fwrite(zip, filename.data);
 }
 
-zip_entry_read :: (zip: zip_t, buf: **void, bufsize: *c_size_t) -> c_ssize_t #foreign ZIP;
+// This function internally allocates memory, which you need to free.
+// So instead, we will not bind it, but use the noallocread variant, and use the allocation
+// mechanisms on the Jai side.
+// zip_entry_read :: (zip: zip_t, buf: **void, bufsize: *c_size_t) -> c_ssize_t #foreign ZIP;
+zip_entry_read :: (zip: zip_t, buf: **void, bufsize: *c_size_t) -> c_ssize_t {
+  size: u64 = zip_entry_uncomp_size(zip);
+  <<buf = alloc(xx size);
+  <<bufsize = size;
+  return zip_entry_noallocread(zip, <<buf, <<bufsize);
+}
+
+// Extra utility function returning the buffer wrapped in a string.
+zip_entry_read :: (zip: zip_t) -> string {
+  result: string = ---;
+  data_size: u64;
+  data_buf: *void;
+  read := zip_entry_read(zip, *data_buf, *data_size);
+  assert(read == xx data_size);
+  result.data = xx data_buf;
+  result.count = xx data_size;
+  return result;
+}
+
 zip_entry_noallocread :: (zip: zip_t, buf: *void, bufsize: c_size_t) -> c_ssize_t #foreign ZIP;
 
 zip_entry_fread :: (zip: zip_t, filename: string) -> c_int {
@@ -152,12 +174,9 @@ zip_extract :: (zip_name: string, dir: string,
   }, arg);
 }
 
-// Fake expose c_free as a way to free stuff that this C-library internally has allocated.
-zip_free :: inline (ptr: *void) {
-  c_free(ptr);
-}
-
 #scope_file
+
+#import "Basic";
 
 #if OS == .LINUX {
   ZIP :: #foreign_library,no_dll "linux/libzip";
@@ -166,8 +185,6 @@ zip_free :: inline (ptr: *void) {
 } else #if OS == .MACOS {
   ZIP :: #foreign_library,no_dll "macos/libzip";
 }
-
-c_free :: (ptr: *void) #runtime_support #no_context;
 
 #scope_module
 
